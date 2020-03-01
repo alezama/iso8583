@@ -8,8 +8,9 @@ import (
 
 // Parser for ISO 8583 messages
 type Parser struct {
-	messages  map[string]reflect.Type
-	MtiEncode int
+	messages     map[string]reflect.Type
+	MtiEncode    int
+	HeaderLength int
 }
 
 // Register MTI
@@ -33,7 +34,16 @@ func (p *Parser) Register(mti string, tpl interface{}) (err error) {
 	return nil
 }
 
-func decodeMti(raw []byte, encode int) (string, error) {
+func decodeIsoHeader(raw []byte, isoHeaderLength int) (string, error) {
+	if isoHeaderLength == 0 {
+		return "", nil
+	}
+	var isoHeader string
+	isoHeader = string(raw[:isoHeaderLength])
+	return isoHeader, nil
+}
+
+func decodeMti(raw []byte, encode int, start int) (string, error) {
 	mtiLen := 4
 	if encode == BCD {
 		mtiLen = 2
@@ -45,9 +55,9 @@ func decodeMti(raw []byte, encode int) (string, error) {
 	var mti string
 	switch encode {
 	case ASCII:
-		mti = string(raw[:mtiLen])
+		mti = string(raw[start : start+mtiLen])
 	case BCD:
-		mti = string(bcd2Ascii(raw[:mtiLen]))
+		mti = string(bcd2Ascii(raw[start : start+mtiLen]))
 	default:
 		return "", errors.New("invalid encode type")
 	}
@@ -63,7 +73,7 @@ func (p *Parser) Parse(raw []byte) (ret *Message, err error) {
 		}
 	}()
 
-	mti, err := decodeMti(raw, p.MtiEncode)
+	mti, err := decodeMti(raw, p.MtiEncode, p.HeaderLength)
 	if err != nil {
 		return nil, err
 	}

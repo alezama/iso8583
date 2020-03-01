@@ -24,15 +24,17 @@ type fieldInfo struct {
 
 // Message is structure for ISO 8583 message encode and decode
 type Message struct {
-	Mti          string
-	MtiEncode    int
-	SecondBitmap bool
-	Data         interface{}
+	IsoHeader       string
+	IsoHeaderLength int
+	Mti             string
+	MtiEncode       int
+	SecondBitmap    bool
+	Data            interface{}
 }
 
 // NewMessage creates new Message structure
 func NewMessage(mti string, data interface{}) *Message {
-	return &Message{mti, ASCII, false, data}
+	return &Message{"", 0, mti, ASCII, false, data}
 }
 
 // Bytes marshall Message to bytes
@@ -45,6 +47,13 @@ func (m *Message) Bytes() (ret []byte, err error) {
 	}()
 
 	ret = make([]byte, 0)
+
+	//generate ISO Header:
+	isoHeaderBytes, err := m.encodeHeader()
+	if err != nil {
+		return nil, err
+	}
+	ret = append(ret, isoHeaderBytes...)
 
 	// generate MTI:
 	mtiBytes, err := m.encodeMti()
@@ -97,6 +106,10 @@ func (m *Message) Bytes() (ret []byte, err error) {
 	ret = append(ret, data...)
 
 	return ret, nil
+}
+
+func (m *Message) encodeHeader() ([]byte, error) {
+	return []byte(m.IsoHeader), nil
 }
 
 func (m *Message) encodeMti() ([]byte, error) {
@@ -197,15 +210,25 @@ func (m *Message) Load(raw []byte) (err error) {
 		}
 	}()
 
+	var start int
+
+	if m.IsoHeaderLength != 0 {
+		m.IsoHeader, err = decodeIsoHeader(raw, m.IsoHeaderLength)
+		if err != nil {
+			return err
+		}
+		start = m.IsoHeaderLength
+	}
+
 	if m.Mti == "" {
-		m.Mti, err = decodeMti(raw, m.MtiEncode)
+		m.Mti, err = decodeMti(raw, m.MtiEncode, start)
 		if err != nil {
 			return err
 		}
 	}
-	start := 4
+	start += 4
 	if m.MtiEncode == BCD {
-		start = 2
+		start -= 2
 	}
 
 	fields := parseFields(m.Data)
